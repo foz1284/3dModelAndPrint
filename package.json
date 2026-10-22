@@ -2,7 +2,7 @@
   "name": "3d-model-and-print",
   "version": "1.0.0",
   "private": true,
-  "description": "Azure-deployable AI workflow for generating and printing 3D models.",
+  "description": "AI-assisted 3D printing workflow with Azure deploy and laptop automation.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Model & Print</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">AI-assisted fabrication</p>
+          <h1>3D Model & Print</h1>
+        </div>
+
+        <label class="toggle-wrap">
+          <input id="approval-toggle" type="checkbox" checked />
+          <span>Require approvals</span>
+        </label>
+      </header>
+
+      <main class="layout">
+        <section class="panel form-panel">
+          <h2>New request</h2>
+          <form id="job-form">
+            <label for="prompt">Describe the object or part</label>
+            <textarea id="prompt" rows="6" placeholder="Example: A compact wall-mount phone stand with cable channel, rounded corners, and a 0.4 mm layer height."></textarea>
+            <button type="submit">Submit request</button>
+          </form>
+        </section>
+
+        <section class="panel jobs-panel">
+          <h2>Workflow</h2>
+          <div id="jobs" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

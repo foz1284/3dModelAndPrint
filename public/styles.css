@@ -1,116 +1,142 @@
-const jobsRoot = document.getElementById("jobs");
-const form = document.getElementById("job-form");
-const promptInput = document.getElementById("prompt");
-const approvalToggle = document.getElementById("approval-toggle");
+const jobListRoot = document.getElementById('jobs');
+const form = document.getElementById('job-form');
+const promptInput = document.getElementById('prompt');
+const approvalToggle = document.getElementById('approval-toggle');
 
 let jobs = [];
-let pollHandle = null;
+let pollTimer = null;
 
-function formatStatus(status) {
-  return status
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function statusLabel(value) {
+  return String(value || 'queued')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Request failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 async function loadJobs() {
-  const res = await fetch("/api/jobs");
-  jobs = await res.json();
+  jobs = await fetchJson('/api/jobs');
   renderJobs();
 }
 
 function renderJobs() {
   if (!jobs.length) {
-    jobsRoot.innerHTML = "<p class='empty'>No jobs yet. Create your first design request.</p>";
+    jobListRoot.innerHTML = '<p class="empty">No jobs yet. Submit the first request to begin the workflow.</p>';
     return;
   }
 
-  jobsRoot.innerHTML = jobs
+  jobListRoot.innerHTML = jobs
     .map((job) => {
-      const renderMarkup = job.renderImages?.length
+      const renderBlock = Array.isArray(job.renderImages) && job.renderImages.length
         ? job.renderImages
-            .map(
-              (image) =>
-                `<img src="${image}" alt="Preview for ${job.id}" class="preview-image" />`
-            )
-            .join("")
-        : "<p class='muted'>No render previews yet.</p>";
+            .map((image) => `<img class="preview-image" src="${image}" alt="Model preview for ${job.id}" />`)
+            .join('')
+        : '<p class="muted">No render previews yet.</p>';
 
       return `
         <article class="job-card ${job.status}">
           <div class="job-header">
             <div>
-              <span class="job-id">${job.id}</span>
-              <h3>${formatStatus(job.status)}</h3>
+              <div class="job-id">${job.id}</div>
+              <h3>${statusLabel(job.status)}</h3>
             </div>
             <span class="status-badge">${job.status}</span>
           </div>
 
-          <p class="job-prompt">${(job.prompt || "").replace(/</g, "&lt;")}</p>
-          <p class="job-summary">${job.summary || "Workflow is running."}</p>
+          <p class="job-prompt">${job.prompt.replace(/</g, '&lt;')}</p>
+          <p class="job-summary">${job.summary || 'Workflow is running.'}</p>
 
-          <div class="render-area">${renderMarkup}</div>
+          <div class="render-area">${renderBlock}</div>
 
           <div class="actions">
-            <button class="secondary" data-action="approve" data-id="${job.id}">Approve</button>
-            <button class="secondary" data-action="iterate" data-id="${job.id}">Request revision</button>
-            <button data-action="print" data-id="${job.id}">Trigger print</button>
+            <button type="button" class="secondary" data-action="approve" data-id="${job.id}">Approve</button>
+            <button type="button" class="secondary" data-action="iterate" data-id="${job.id}">Request revision</button>
+            <button type="button" data-action="print" data-id="${job.id}">Trigger print</button>
           </div>
 
-          ${job.modelUrl ? `<a class="model-link" href="${job.modelUrl}" target="_blank" rel="noreferrer">Open model</a>` : ""}
-          ${job.gcodeUrl ? `<a class="model-link" href="${job.gcodeUrl}" target="_blank" rel="noreferrer">Open sliced file</a>` : ""}
+          <div class="links">
+            ${job.modelUrl ? `<a href="${job.modelUrl}" target="_blank" rel="noreferrer">Open model</a>` : ''}
+            ${job.gcodeUrl ? `<a href="${job.gcodeUrl}" target="_blank" rel="noreferrer">Open sliced file</a>` : ''}
+          </div>
         </article>
       `;
     })
-    .join("");
+    .join('');
 
-  document.querySelectorAll("[data-action]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const { action, id } = button.dataset;
+  jobListRoot.querySelectorAll('[data-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.dataset.action;
+      const id = button.dataset.id;
 
-      if (action === "approve") {
-        await fetch(`/api/jobs/${id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user: "web-user" }) });
+      try {
+        if (action === 'approve') {
+          await fetchJson(`/api/jobs/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: 'web-user' })
+          });
+        }
+
+        if (action === 'iterate') {
+          const revisionPrompt = window.prompt('What should change in the next revision?');
+          if (!revisionPrompt) return;
+
+          await fetchJson(`/api/jobs/${id}/iterate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: revisionPrompt })
+          });
+        }
+
+        if (action === 'print') {
+          await fetchJson(`/api/jobs/${id}/trigger-print`, { method: 'POST' });
+        }
+
+        await loadJobs();
+      } catch (error) {
+        alert(error.message || 'An error occurred.');
       }
-
-      if (action === "iterate") {
-        const revisionPrompt = window.prompt("What should be changed?");
-        if (!revisionPrompt) return;
-        await fetch(`/api/jobs/${id}/iterate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: revisionPrompt }) });
-      }
-
-      if (action === "print") {
-        await fetch(`/api/jobs/${id}/trigger-print`, { method: "POST" });
-      }
-
-      await loadJobs();
     });
   });
 }
 
-form.addEventListener("submit", async (event) => {
+form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const text = promptInput.value.trim();
-  if (!text) {
+  const prompt = promptInput.value.trim();
+  if (!prompt) {
+    alert('Please describe the object first.');
     return;
   }
 
-  await fetch("/api/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: text,
-      requireApproval: approvalToggle.checked
-    })
-  });
+  try {
+    await fetchJson('/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        requireApproval: approvalToggle.checked,
+        approvalMode: approvalToggle.checked ? 'approval' : 'one-shot'
+      })
+    });
 
-  promptInput.value = "";
-  await loadJobs();
+    promptInput.value = '';
+    await loadJobs();
+  } catch (error) {
+    alert(error.message || 'Unable to create the job.');
+  }
 });
 
 async function startPolling() {
   await loadJobs();
-  pollHandle = setInterval(loadJobs, 5000);
+  pollTimer = setInterval(loadJobs, 5000);
 }
 
 startPolling();
