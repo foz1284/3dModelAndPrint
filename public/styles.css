@@ -1,0 +1,116 @@
+const jobsRoot = document.getElementById("jobs");
+const form = document.getElementById("job-form");
+const promptInput = document.getElementById("prompt");
+const approvalToggle = document.getElementById("approval-toggle");
+
+let jobs = [];
+let pollHandle = null;
+
+function formatStatus(status) {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+async function loadJobs() {
+  const res = await fetch("/api/jobs");
+  jobs = await res.json();
+  renderJobs();
+}
+
+function renderJobs() {
+  if (!jobs.length) {
+    jobsRoot.innerHTML = "<p class='empty'>No jobs yet. Create your first design request.</p>";
+    return;
+  }
+
+  jobsRoot.innerHTML = jobs
+    .map((job) => {
+      const renderMarkup = job.renderImages?.length
+        ? job.renderImages
+            .map(
+              (image) =>
+                `<img src="${image}" alt="Preview for ${job.id}" class="preview-image" />`
+            )
+            .join("")
+        : "<p class='muted'>No render previews yet.</p>";
+
+      return `
+        <article class="job-card ${job.status}">
+          <div class="job-header">
+            <div>
+              <span class="job-id">${job.id}</span>
+              <h3>${formatStatus(job.status)}</h3>
+            </div>
+            <span class="status-badge">${job.status}</span>
+          </div>
+
+          <p class="job-prompt">${(job.prompt || "").replace(/</g, "&lt;")}</p>
+          <p class="job-summary">${job.summary || "Workflow is running."}</p>
+
+          <div class="render-area">${renderMarkup}</div>
+
+          <div class="actions">
+            <button class="secondary" data-action="approve" data-id="${job.id}">Approve</button>
+            <button class="secondary" data-action="iterate" data-id="${job.id}">Request revision</button>
+            <button data-action="print" data-id="${job.id}">Trigger print</button>
+          </div>
+
+          ${job.modelUrl ? `<a class="model-link" href="${job.modelUrl}" target="_blank" rel="noreferrer">Open model</a>` : ""}
+          ${job.gcodeUrl ? `<a class="model-link" href="${job.gcodeUrl}" target="_blank" rel="noreferrer">Open sliced file</a>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+
+  document.querySelectorAll("[data-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const { action, id } = button.dataset;
+
+      if (action === "approve") {
+        await fetch(`/api/jobs/${id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user: "web-user" }) });
+      }
+
+      if (action === "iterate") {
+        const revisionPrompt = window.prompt("What should be changed?");
+        if (!revisionPrompt) return;
+        await fetch(`/api/jobs/${id}/iterate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: revisionPrompt }) });
+      }
+
+      if (action === "print") {
+        await fetch(`/api/jobs/${id}/trigger-print`, { method: "POST" });
+      }
+
+      await loadJobs();
+    });
+  });
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const text = promptInput.value.trim();
+  if (!text) {
+    return;
+  }
+
+  await fetch("/api/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: text,
+      requireApproval: approvalToggle.checked
+    })
+  });
+
+  promptInput.value = "";
+  await loadJobs();
+});
+
+async function startPolling() {
+  await loadJobs();
+  pollHandle = setInterval(loadJobs, 5000);
+}
+
+startPolling();
